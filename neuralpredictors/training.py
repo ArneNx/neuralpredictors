@@ -1,9 +1,10 @@
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from contextlib import contextmanager
 import numpy as np
-import time
 import warnings
 import torch
+
+from mlutils.tracking import Tracker
 
 
 def cycle(iterable):
@@ -33,45 +34,6 @@ def copy_state(model):
     return copy_dict
 
 
-class Tracker:
-    def log_objective(self, obj):
-        raise NotImplementedError()
-
-    def finalize(self, obj):
-        pass
-
-
-class TimeObjectiveTracker(Tracker):
-    def __init__(self):
-        self.tracker = np.array([[time.time(), 0.0]])
-
-    def log_objective(self, obj):
-        new_track_point = np.array([[time.time(), obj]])
-        self.tracker = np.concatenate((self.tracker, new_track_point), axis=0)
-
-    def finalize(self):
-        self.tracker[:, 0] -= self.tracker[0, 0]
-
-
-class MultipleObjectiveTracker(Tracker):
-    def __init__(self, **objectives):
-        self.objectives = objectives
-        self.log = defaultdict(list)
-        self.time = []
-
-    def log_objective(self, obj):
-        t = time.time()
-        for name, objective in self.objectives.items():
-            self.log[name].append(objective())
-        self.time.append(t)
-
-    def finalize(self):
-        self.time = np.array(self.time)
-        self.time -= self.time[0]
-        for k, l in self.log.items():
-            self.log[k] = np.array(l)
-
-
 @contextmanager
 def eval_state(model):
     training_status = model.training
@@ -99,7 +61,7 @@ def device_state(model, device):
 
 def early_stopping(
     model,
-    objective,
+    objective_closure,
     interval=5,
     patience=20,
     start=0,
@@ -126,8 +88,8 @@ def early_stopping(
 
     Args:
         model:     model that is being optimized
-        objective: objective function that is used for early stopping. The function must accept single positional argument `model`
-            and return a single scalar quantity.
+        objective_closue: objective function that is used for early stopping. Must be of the form objective() and
+                          encapsulate the model. Should return the best objective
         interval:  interval at which objective is evaluated to consider early stopping
         patience:  number of times the objective is allow to not become better before the iterator terminates
         start:     start value for iteration (used to check against `max_iter`)
@@ -152,7 +114,7 @@ def early_stopping(
     def _objective():
         if switch_mode:
             model.eval()
-        ret = objective(model)
+        ret = objective_closure(model)
         if switch_mode:
             model.train(training_status)
         return ret
@@ -161,13 +123,21 @@ def early_stopping(
         old_objective = _objective()
         if restore_best:
             model.load_state_dict(best_state_dict)
-            print("Restoring best model after lr decay! {:.6f} ---> {:.6f}".format(old_objective, _objective()))
+            print(
+                "Restoring best model after lr decay! {:.6f} ---> {:.6f}".format(
+                    old_objective, _objective()
+                )
+            )
 
     def finalize(model, best_state_dict):
         old_objective = _objective()
         if restore_best:
             model.load_state_dict(best_state_dict)
-            print("Restoring best model! {:.6f} ---> {:.6f}".format(old_objective, _objective()))
+            print(
+                "Restoring best model! {:.6f} ---> {:.6f}".format(
+                    old_objective, _objective()
+                )
+            )
         else:
             print("Final best model! objective {:.6f}".format(_objective()))
 
@@ -200,7 +170,9 @@ def early_stopping(
 
             if current_objective * maximize < best_objective * maximize - tolerance:
                 print(
-                    "[{:03d}|{:02d}/{:02d}] ---> {}".format(epoch, patience_counter, patience, current_objective),
+                    "[{:03d}|{:02d}/{:02d}] ---> {}".format(
+                        epoch, patience_counter, patience, current_objective
+                    ),
                     flush=True,
                 )
                 best_state_dict = copy_state(model)
@@ -209,7 +181,9 @@ def early_stopping(
             else:
                 patience_counter += 1
                 print(
-                    "[{:03d}|{:02d}/{:02d}] -/-> {}".format(epoch, patience_counter, patience, current_objective),
+                    "[{:03d}|{:02d}/{:02d}] -/-> {}".format(
+                        epoch, patience_counter, patience, current_objective
+                    ),
                     flush=True,
                 )
 
