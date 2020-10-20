@@ -1,3 +1,4 @@
+import copy
 from collections import OrderedDict
 from contextlib import contextmanager
 import numpy as np
@@ -29,7 +30,10 @@ def copy_state(model):
     copy_dict = OrderedDict()
     state_dict = model.state_dict()
     for k, v in state_dict.items():
-        copy_dict[k] = v.cpu() if v.is_cuda else v.clone()
+        if isinstance(v,torch.Tensor):
+            copy_dict[k] = v.cpu() if v.is_cuda else v.clone()
+        else:
+            copy_dict[k] = copy.deepcopy(v)
 
     return copy_dict
 

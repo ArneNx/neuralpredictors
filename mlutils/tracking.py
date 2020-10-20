@@ -65,7 +65,7 @@ class AdvancedMultipleObjectiveTracker(Tracker):
                 log[key] = []
         return log
 
-    def __init__(self, main_objective=(), **objectives):
+    def __init__(self, main_objective=(), save_each_epoch=True, **objectives):
         """
         In principle, `objectives` is expected to be a dictionary of dictionaries
         The hierarchy can in principle be arbitrary deep.
@@ -80,15 +80,22 @@ class AdvancedMultipleObjectiveTracker(Tracker):
         self.objectives = objectives
         self.log = self._initialize_log(objectives)
         self.time = []
+        self.main_objective = main_objective
         self.epoch = -1
         self.best_epoch = -1
-        self.main_objective = main_objective
+        if not save_each_epoch:
+            self.save_each_epoch = True
+            self.start_epoch()  # add first element to arrays
+        self.save_each_epoch = save_each_epoch
 
     def add_objectives(self, objectives, init_epoch=False):
-        deep_update(self.objectives,objectives)
+        deep_update(self.objectives, objectives)
         new_log = self._initialize_log(objectives)
         if init_epoch:
+            _save_each_epoch = self.save_each_epoch
+            self.save_each_epoch = True
             self._initialize_epoch(new_log, objectives)
+            self.save_each_epoch = _save_each_epoch
         deep_update(self.log, new_log)
 
     def _initialize_epoch(self, log, objectives):
@@ -96,13 +103,17 @@ class AdvancedMultipleObjectiveTracker(Tracker):
             if isinstance(objective, dict):
                 self._initialize_epoch(log[key], objective)
             elif not callable(objective):
-                while len(log[key]) <= self.epoch:
-                    log[key].append(objective)
+                if self.save_each_epoch:
+                    while len(log[key]) <= self.epoch:
+                        log[key].append(objective)
+                else:
+                    log[key][0] = objective
 
     def start_epoch(self):
         t = time.time()
-        self.time.append(t)
-        self.epoch += 1
+        if self.save_each_epoch:
+            self.time.append(t)
+            self.epoch += 1
         self._initialize_epoch(self.log, self.objectives)
 
     def _log_objective_value(self, obj, log, keys=()):
@@ -141,7 +152,7 @@ class AdvancedMultipleObjectiveTracker(Tracker):
                 for key, l in n_log.items():
                     l = l[nonzero_start:]
                     if isinstance(l, np.ndarray):
-                        n_log[key] = l / norm
+                        n_log[key] = l / np.where(norm > 0, norm, np.ones_like(norm))
             return n_log
         else:
             return np.array(log)
@@ -203,7 +214,7 @@ class AdvancedMultipleObjectiveTracker(Tracker):
         self.time -= self.time[0]
         self.log = self._normalize_log(self.log)
 
-    def to_dict(self):
+    def state_dict(self):
         """
         Serializes this instance to a Python dictionary.
 
@@ -212,6 +223,14 @@ class AdvancedMultipleObjectiveTracker(Tracker):
         """
         output = copy.deepcopy(self.__dict__)
         return output
+
+    def load_state_dict(self, tracker_dict: Dict):
+        self.main_objective = tracker_dict["main_objective"]
+        self.objectives = tracker_dict["objectives"]
+        self.log = tracker_dict["log"]
+        self.time = tracker_dict["time"]
+        self.epoch = tracker_dict["epoch"]
+        self.best_epoch = tracker_dict["best_epoch"]
 
     @classmethod
     def from_dict(cls, tracker_dict: Dict) -> "AdvancedMultipleObjectiveTracker":
