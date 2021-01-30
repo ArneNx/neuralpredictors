@@ -5,7 +5,7 @@ import numpy as np
 import warnings
 import torch
 
-from mlutils.tracking import Tracker
+from neuralpredictors.tracking import Tracker
 
 
 def cycle(iterable):
@@ -30,7 +30,7 @@ def copy_state(model):
     copy_dict = OrderedDict()
     state_dict = model.state_dict()
     for k, v in state_dict.items():
-        if isinstance(v,torch.Tensor):
+        if isinstance(v, torch.Tensor):
             copy_dict[k] = v.cpu() if v.is_cuda else v.clone()
         else:
             copy_dict[k] = copy.deepcopy(v)
@@ -65,7 +65,7 @@ def device_state(model, device):
 
 def early_stopping(
     model,
-    objective_closure,
+    objective,
     interval=5,
     patience=20,
     start=0,
@@ -92,7 +92,7 @@ def early_stopping(
 
     Args:
         model:     model that is being optimized
-        objective_closue: objective function that is used for early stopping. Must be of the form objective() and
+        objective: objective function that is used for early stopping. Must be of the form objective() and
                           encapsulate the model. Should return the best objective
         interval:  interval at which objective is evaluated to consider early stopping
         patience:  number of times the objective is allow to not become better before the iterator terminates
@@ -118,7 +118,7 @@ def early_stopping(
     def _objective():
         if switch_mode:
             model.eval()
-        ret = objective_closure(model)
+        ret = objective(model)
         if switch_mode:
             model.train(training_status)
         return ret
@@ -127,21 +127,13 @@ def early_stopping(
         old_objective = _objective()
         if restore_best:
             model.load_state_dict(best_state_dict)
-            print(
-                "Restoring best model after lr decay! {:.6f} ---> {:.6f}".format(
-                    old_objective, _objective()
-                )
-            )
+            print("Restoring best model after lr decay! {:.6f} ---> {:.6f}".format(old_objective, _objective()))
 
     def finalize(model, best_state_dict):
         old_objective = _objective()
         if restore_best:
             model.load_state_dict(best_state_dict)
-            print(
-                "Restoring best model! {:.6f} ---> {:.6f}".format(
-                    old_objective, _objective()
-                )
-            )
+            print("Restoring best model! {:.6f} ---> {:.6f}".format(old_objective, _objective()))
         else:
             print("Final best model! objective {:.6f}".format(_objective()))
 
@@ -174,9 +166,7 @@ def early_stopping(
 
             if current_objective * maximize < best_objective * maximize - tolerance:
                 print(
-                    "[{:03d}|{:02d}/{:02d}] ---> {}".format(
-                        epoch, patience_counter, patience, current_objective
-                    ),
+                    "[{:03d}|{:02d}/{:02d}] ---> {}".format(epoch, patience_counter, patience, current_objective),
                     flush=True,
                 )
                 best_state_dict = copy_state(model)
@@ -185,9 +175,7 @@ def early_stopping(
             else:
                 patience_counter += 1
                 print(
-                    "[{:03d}|{:02d}/{:02d}] -/-> {}".format(
-                        epoch, patience_counter, patience, current_objective
-                    ),
+                    "[{:03d}|{:02d}/{:02d}] -/-> {}".format(epoch, patience_counter, patience, current_objective),
                     flush=True,
                 )
 

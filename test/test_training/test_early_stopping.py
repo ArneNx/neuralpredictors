@@ -44,7 +44,7 @@ class TestEarlyStopping:
 
         closure = CounterClosure(objective_vals, model)
 
-        for epoch, val in early_stopping(model, closure, maximize=maximize, patience=patience, interval=interval):
+        for epoch, val in early_stopping(model, closure, interval=interval, patience=patience, maximize=maximize):
             pass
         assert (
             int(model.counter) == expected_epoch + 2
